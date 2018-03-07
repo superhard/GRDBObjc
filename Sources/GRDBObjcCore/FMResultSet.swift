@@ -11,7 +11,8 @@ import SQLite3
     
     private var db: FMDatabase
     private var state: State
-    
+    @objc public var query: String?
+
     private var cursor: RowCursor {
         switch state {
         case .initialized(let cursor): return cursor
@@ -37,6 +38,12 @@ import SQLite3
     init(database: FMDatabase, cursor: RowCursor) {
         self.db = database
         self.state = .initialized(cursor)
+    }
+    
+    init(database: FMDatabase, cursor: RowCursor, query: String) {
+        self.db = database
+        self.state = .initialized(cursor)
+        self.query = query
     }
     
     @objc

@@ -14,6 +14,19 @@ import Foundation
     }
     
     @objc
+    public func close() {
+        
+    }
+    
+    @objc(intForQuery:)
+    public func intFor(query: String) -> Int {
+        if let res = try? Int.fetchOne(db, query)! {
+            return res
+        }
+        return 0
+    }
+    
+    @objc
     public var lastInsertRowId: Int64 {
         return db.lastInsertedRowID
     }
@@ -90,7 +103,7 @@ import Foundation
         do {
             let arguments = values.map { statementArguments(from: $0) }
             let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor)
+            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
         } catch {
             handleError(error)
             return nil
@@ -102,7 +115,7 @@ import Foundation
         do {
             let arguments = parameterDictionary.map { statementArguments(from: $0) }
             let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor)
+            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
         } catch {
             handleError(error)
             return nil
@@ -114,7 +127,7 @@ import Foundation
         do {
             let arguments = values.map { statementArguments(from: $0) }
             let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor)
+            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
         } catch {
             throw handleError(error)
         }
