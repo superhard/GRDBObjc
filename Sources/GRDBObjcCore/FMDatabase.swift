@@ -5,7 +5,8 @@ import Foundation
 @objc public class FMDatabase : NSObject {
     let db: Database
     var dateFormatter: DateFormatter?
-
+    var autoclosingPool = AutoclosingPool()
+    
     /// The GRDB database connection that fuels this FMDatabase instance.
     public var grdbConnection: Database { return db }
     
@@ -23,7 +24,7 @@ import Foundation
     
     @objc(intForQuery:)
     public func intFor(query: String) -> Int {
-        if let res = try? Int.fetchOne(db, query)! {
+        if let res = try? Int.fetchOne(db, sql: query)! {
             return res
         }
         return 0
@@ -54,7 +55,7 @@ import Foundation
     @discardableResult @objc
     public func executeStatements(_ sql: String) -> Bool {
         do {
-            try db.execute(sql)
+            try db.execute(sql: sql)
             return true
         } catch {
             handleError(error)
@@ -66,7 +67,7 @@ import Foundation
     public func executeUpdate(_ sql: String, argumentsInArray values: [Any]?) -> Bool {
         do {
             let arguments = values.map { statementArguments(from: $0) }
-            let statement = try db.makeUpdateStatement(sql)
+            let statement = try db.makeUpdateStatement(sql: sql)
             try statement.execute(arguments: arguments)
             return true
         } catch {
@@ -79,7 +80,7 @@ import Foundation
     public func executeUpdate(_ sql: String, parameterDictionary: [String: Any]?) -> Bool {
         do {
             let arguments = parameterDictionary.map { statementArguments(from: $0) }
-            let statement = try db.makeUpdateStatement(sql)
+            let statement = try db.makeUpdateStatement(sql: sql)
             try statement.execute(arguments: arguments)
             return true
         } catch {
@@ -92,7 +93,7 @@ import Foundation
     public func executeUpdate(_ sql: String, values: [Any]?) throws {
         do {
             let arguments = values.map { statementArguments(from: $0) }
-            let statement = try db.makeUpdateStatement(sql)
+            let statement = try db.makeUpdateStatement(sql: sql)
             try statement.execute(arguments: arguments)
         } catch {
             throw handleError(error)
@@ -104,9 +105,9 @@ import Foundation
     @objc(executeQuery:withArgumentsInArray:)
     public func executeQuery(_ sql: String, argumentsInArray values: [Any]?) -> FMResultSet? {
         do {
-            let arguments = values.map { statementArguments(from: $0) }
-            let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
+            let arguments = values.map { statementArguments(from: $0) } ?? StatementArguments()
+            let cursor = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+            return FMResultSet(database: self, cursor: cursor)
         } catch {
             handleError(error)
             return nil
@@ -116,9 +117,9 @@ import Foundation
     @objc(executeQuery:withParameterDictionary:)
     public func executeQuery(_ sql: String, parameterDictionary: [String: Any]?) -> FMResultSet? {
         do {
-            let arguments = parameterDictionary.map { statementArguments(from: $0) }
-            let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
+            let arguments = parameterDictionary.map { statementArguments(from: $0) } ?? StatementArguments()
+            let cursor = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+            return FMResultSet(database: self, cursor: cursor)
         } catch {
             handleError(error)
             return nil
@@ -128,9 +129,9 @@ import Foundation
     @objc
     public func executeQuery(_ sql: String, values: [Any]?) throws -> FMResultSet {
         do {
-            let arguments = values.map { statementArguments(from: $0) }
-            let cursor = try Row.fetchCursor(db, sql, arguments: arguments)
-            return FMResultSet(database: self, cursor: cursor, query: "\(sql) + \(arguments?.description ?? "")")
+            let arguments = values.map { statementArguments(from: $0) } ?? StatementArguments()
+            let cursor = try Row.fetchCursor(db, sql: sql, arguments: arguments)
+            return FMResultSet(database: self, cursor: cursor)
         } catch {
             throw handleError(error)
         }
@@ -141,7 +142,7 @@ import Foundation
     @objc
     public func beginTransaction() -> Bool {
         do {
-            try db.execute("BEGIN EXCLUSIVE TRANSACTION")
+            try db.beginTransaction(.exclusive)
             return true
         } catch {
             handleError(error)
@@ -152,7 +153,7 @@ import Foundation
     @objc
     public func beginDeferredTransaction() -> Bool {
         do {
-            try db.execute("BEGIN DEFERRED TRANSACTION")
+            try db.beginTransaction(.deferred)
             return true
         } catch {
             handleError(error)
@@ -163,7 +164,7 @@ import Foundation
     @objc
     public func commit() -> Bool {
         do {
-            try db.execute("COMMIT")
+            try db.commit()
             return true
         } catch {
             handleError(error)
@@ -174,7 +175,7 @@ import Foundation
     @objc
     public func rollback() -> Bool {
         do {
-            try db.execute("ROLLBACK")
+            try db.commit()
             return true
         } catch {
             handleError(error)
@@ -204,7 +205,7 @@ import Foundation
     @objc
     public func startSavePoint(name: String) throws {
         do {
-            try db.execute("SAVEPOINT '\(espaceSavePointName(name))'")
+            try db.execute(sql: "SAVEPOINT '\(espaceSavePointName(name))'")
         } catch {
             throw handleError(error)
         }
@@ -213,7 +214,7 @@ import Foundation
     @objc
     public func releaseSavePoint(name: String) throws {
         do {
-            try db.execute("RELEASE SAVEPOINT '\(espaceSavePointName(name))'")
+            try db.execute(sql: "RELEASE SAVEPOINT '\(espaceSavePointName(name))'")
         } catch {
             throw handleError(error)
         }
@@ -222,7 +223,7 @@ import Foundation
     @objc
     public func rollbackSavePoint(name: String) throws {
         do {
-            try db.execute("ROLLBACK TRANSACTION TO SAVEPOINT '\(espaceSavePointName(name))'")
+            try db.execute(sql: "ROLLBACK TRANSACTION TO SAVEPOINT '\(espaceSavePointName(name))'")
         } catch {
             throw handleError(error)
         }
@@ -279,7 +280,7 @@ import Foundation
     @objc
     public func _makeUpdateStatement(_ sql: String) throws -> _FMUpdateStatement {
         do {
-            return try _FMUpdateStatement(database: self, statement: db.makeUpdateStatement(sql))
+            return try _FMUpdateStatement(database: self, statement: db.makeUpdateStatement(sql: sql))
         } catch {
             throw handleError(error)
         }
@@ -288,7 +289,7 @@ import Foundation
     @objc
     public func _makeSelectStatement(_ sql: String) throws -> _FMSelectStatement {
         do {
-            return try _FMSelectStatement(database: self, statement: db.makeSelectStatement(sql))
+            return try _FMSelectStatement(database: self, statement: db.makeSelectStatement(sql: sql))
         } catch {
             throw handleError(error)
         }
@@ -358,5 +359,49 @@ import Foundation
         if logsErrors { NSLog("DB Error: %@", "\(fmdbError)") }
         if crashOnErrors { fatalError("\(error)") }
         return fmdbError
+    }
+    
+    // Internal
+    
+    // Objective-C autorelease pools will not release and close FMResultSet.
+    // This does not play well with GRDB cursors, which MUST be deinited in
+    // specific dispatch queues.
+    //
+    // So wrap FMDB accesses in a autoclosingPool:
+    func autoclosingResultSets<T>(_ block: () throws -> T) rethrows -> T {
+        defer {
+            autoclosingPool.close()
+        }
+        return try block()
+    }
+}
+
+class AutoclosingPool {
+    private class WeakResultSet {
+        weak var resultSet: FMResultSet?
+        
+        init(_ resultSet: FMResultSet) {
+            self.resultSet = resultSet
+        }
+        
+        func close() {
+            resultSet?.close()
+            resultSet = nil
+        }
+    }
+    
+    private var resultSets: [WeakResultSet] = []
+    
+    init() { }
+    
+    func add(_ resultSet: FMResultSet) {
+        resultSets.append(WeakResultSet(resultSet))
+    }
+    
+    func close() {
+        for resultSet in resultSets {
+            resultSet.close()
+        }
+        resultSets = []
     }
 }
